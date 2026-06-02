@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const cors = require('cors');
+const { Pool } = require('pg');
 
 const app = express();
 app.use(cors());
@@ -13,19 +14,95 @@ app.get('/', (req, res) => res.send('Handleliste-server kjører ✅'));
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
+// ===== Database (Supabase / Postgres) =====
+// Setter DATABASE_URL i miljøet i produksjon. Lokalt uten DB → ren in-memory.
+const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    })
+  : null;
+
+async function initDb() {
+  if (!pool) {
+    console.warn('⚠️  Ingen DATABASE_URL satt – kjører in-memory (data forsvinner ved omstart)');
+    return;
+  }
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS households (
+      code TEXT PRIMARY KEY,
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  console.log('✅ Database tilkoblet og tabell klar');
+}
+
+// In-memory cache (for hastighet + sanntidssync). Speiles til databasen.
 const households = {};
 const clientHousehold = new Map();
+
+function normalize(data) {
+  data.groceries = data.groceries || [];
+  data.meals = data.meals || [];
+  data.mealTemplates = data.mealTemplates || [];
+  return data;
+}
+
+// Hent husstand: fra cache, ellers fra databasen, ellers opprett tom.
+async function ensureHousehold(code) {
+  if (households[code]) return households[code];
+
+  let data = { groceries: [], meals: [], mealTemplates: [] };
+  if (pool) {
+    try {
+      const r = await pool.query('SELECT data FROM households WHERE code = $1', [code]);
+      if (r.rows.length) {
+        data = normalize(r.rows[0].data || {});
+      } else {
+        await pool.query(
+          'INSERT INTO households(code, data) VALUES($1, $2) ON CONFLICT (code) DO NOTHING',
+          [code, data]
+        );
+      }
+    } catch (err) {
+      console.error('DB-lesing feilet:', err.message);
+    }
+  }
+  households[code] = normalize(data);
+  return households[code];
+}
+
+// Lagre husstanden til databasen (write-through).
+function persist(code) {
+  if (!pool) return;
+  const hh = households[code];
+  if (!hh) return;
+  pool
+    .query(
+      `INSERT INTO households(code, data, updated_at) VALUES($1, $2, now())
+       ON CONFLICT (code) DO UPDATE SET data = $2, updated_at = now()`,
+      [code, hh]
+    )
+    .catch(err => console.error('DB-lagring feilet:', err.message));
+}
+
+async function codeExists(code) {
+  if (households[code]) return true;
+  if (!pool) return false;
+  try {
+    const r = await pool.query('SELECT 1 FROM households WHERE code = $1', [code]);
+    return r.rows.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
-}
-
-function ensureHousehold(code) {
-  if (!households[code]) households[code] = { groceries: [], meals: [], mealTemplates: [] };
-  return households[code];
 }
 
 function broadcast(code, data) {
@@ -36,9 +113,12 @@ function broadcast(code, data) {
   });
 }
 
+// Send oppdatert tilstand til alle klienter OG lagre til databasen.
 function broadcastState(code) {
   const hh = households[code];
-  if (hh) broadcast(code, { type: 'STATE', groceries: hh.groceries, meals: hh.meals, mealTemplates: hh.mealTemplates || [] });
+  if (!hh) return;
+  broadcast(code, { type: 'STATE', groceries: hh.groceries, meals: hh.meals, mealTemplates: hh.mealTemplates || [] });
+  persist(code);
 }
 
 // Synkroniser malen for en rett: lagrer gjeldende ingredienser per rettnavn (upsert)
@@ -74,45 +154,42 @@ function syncTemplate(hh, mealId) {
   }
 }
 
-// Totalt antall for en vare = sum av alle porsjoner + eventuelt generelt antall
-function totalQuantity(item) {
-  const portionSum = (item.portions || []).reduce((sum, p) => sum + p.quantity, 0);
-  return portionSum + (item.generalQuantity || 0);
-}
-
-app.get('/api/household/:code', (req, res) => {
+// ===== REST =====
+app.get('/api/household/:code', async (req, res) => {
   const code = req.params.code.toUpperCase();
-  const hh = ensureHousehold(code);
-  res.json({ code, groceries: hh.groceries, meals: hh.meals });
+  const hh = await ensureHousehold(code);
+  res.json({ code, groceries: hh.groceries, meals: hh.meals, mealTemplates: hh.mealTemplates });
 });
 
-app.post('/api/household/create', (req, res) => {
+app.post('/api/household/create', async (req, res) => {
   let code;
-  do { code = generateCode(); } while (households[code]);
-  ensureHousehold(code);
+  do { code = generateCode(); } while (await codeExists(code));
+  await ensureHousehold(code);
+  persist(code);
   res.json({ code });
 });
 
+// ===== WebSocket =====
 wss.on('connection', (ws) => {
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
     const { action, code: rawCode } = msg;
     const code = rawCode ? rawCode.toUpperCase() : null;
-    const hh = code ? households[code] : null;
+    if (!code) return;
+
+    // Sørg for at husstanden er lastet fra databasen før vi gjør noe
+    const hh = await ensureHousehold(code);
 
     switch (action) {
       case 'JOIN': {
-        if (!code) return;
-        ensureHousehold(code);
         clientHousehold.set(ws, code);
-        ws.send(JSON.stringify({ type: 'STATE', ...households[code] }));
+        ws.send(JSON.stringify({ type: 'STATE', ...hh }));
         break;
       }
 
       case 'ADD_ITEM': {
-        if (!hh) return;
         const normalizedText = msg.text.trim().toLowerCase();
         const mealId = msg.mealId || null;
         const qty = msg.quantity || 1;
@@ -146,8 +223,6 @@ wss.on('connection', (ws) => {
       }
 
       case 'SET_PORTION': {
-        // Endre antall for en spesifikk rett (eller generelt)
-        if (!hh) return;
         const item = hh.groceries.find(g => g.id === msg.id);
         if (!item) return;
 
@@ -166,7 +241,6 @@ wss.on('connection', (ws) => {
       }
 
       case 'TOGGLE_ITEM': {
-        if (!hh) return;
         const item = hh.groceries.find(g => g.id === msg.id);
         if (item) item.checked = !item.checked;
         broadcastState(code);
@@ -174,7 +248,6 @@ wss.on('connection', (ws) => {
       }
 
       case 'DELETE_ITEM': {
-        if (!hh) return;
         const toDelete = hh.groceries.find(g => g.id === msg.id);
         const affectedMealIds = toDelete ? (toDelete.portions || []).map(p => p.mealId) : [];
         hh.groceries = hh.groceries.filter(g => g.id !== msg.id);
@@ -184,7 +257,6 @@ wss.on('connection', (ws) => {
       }
 
       case 'CLEAR_CHECKED': {
-        if (!hh) return;
         hh.groceries.forEach(item => {
           if (item.checked) { item.done = true; item.checked = false; }
         });
@@ -193,7 +265,6 @@ wss.on('connection', (ws) => {
       }
 
       case 'ADD_MEAL': {
-        if (!hh) return;
         const newMeal = {
           id: Date.now().toString() + Math.random().toString(36).slice(2),
           day: msg.day,
@@ -221,20 +292,16 @@ wss.on('connection', (ws) => {
           }
         }
 
-        // Synk malen (oppretter tom mal hvis ny rett, eller beholder eksisterende)
         syncTemplate(hh, newMeal.id);
         broadcastState(code);
         break;
       }
 
       case 'DELETE_MEAL': {
-        if (!hh) return;
         hh.meals = hh.meals.filter(m => m.id !== msg.id);
-        // Fjern porsjoner knyttet til denne retten
         hh.groceries.forEach(g => {
           g.portions = (g.portions || []).filter(p => p.mealId !== msg.id);
         });
-        // Slett varer som nå ikke er knyttet til noe og har 0 generelt
         hh.groceries = hh.groceries.filter(g =>
           (g.portions || []).length > 0 || (g.generalQuantity || 0) > 0
         );
@@ -250,4 +317,6 @@ wss.on('connection', (ws) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log(`Server kjører på http://localhost:${PORT}`));
+initDb().finally(() => {
+  server.listen(PORT, () => console.log(`Server kjører på http://localhost:${PORT}`));
+});
