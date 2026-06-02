@@ -4,8 +4,21 @@ import GroceryList from './components/GroceryList.jsx'
 import MealPlan from './components/MealPlan.jsx'
 import { WS_URL } from './config.js'
 
+const STORAGE_KEY = 'handleliste:household'
+
+function loadStoredHousehold() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed && parsed.name && parsed.code) return parsed
+  } catch {}
+  return null
+}
+
 export default function App() {
-  const [household, setHousehold] = useState(null)
+  // Husk husstanden fra forrige besøk
+  const [household, setHousehold] = useState(loadStoredHousehold)
   const [state, setState] = useState({ groceries: [], meals: [], mealTemplates: [] })
   const [tab, setTab] = useState('grocery')
   const [connected, setConnected] = useState(false)
@@ -83,12 +96,23 @@ const sendMessage = useCallback((msg) => {
 
   // ✅ Join household
   function handleJoin(name, code, initialState) {
-    setHousehold({ name, code })
+    const hh = { name, code }
+    setHousehold(hh)
+    // Husk husstanden til neste besøk
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(hh)) } catch {}
     setState({
       groceries: initialState.groceries || [],
       meals: initialState.meals || [],
       mealTemplates: initialState.mealTemplates || []
     })
+  }
+
+  // ✅ Bytt husstand (logg ut)
+  function handleLeave() {
+    if (!confirm('Vil du bytte husstand? Du må skrive inn navn og kode på nytt.')) return
+    try { localStorage.removeItem(STORAGE_KEY) } catch {}
+    setHousehold(null)
+    setState({ groceries: [], meals: [], mealTemplates: [] })
   }
 
   // ✅ Copy code
@@ -128,13 +152,22 @@ const sendMessage = useCallback((msg) => {
           Hei, {household.name}!
         </h1>
 
-        <button
-          className="household-badge"
-          onClick={handleCopyCode}
-          title="Trykk for å kopiere kode"
-        >
-          # {household.code}
-        </button>
+        <div className="header-actions">
+          <button
+            className="household-badge"
+            onClick={handleCopyCode}
+            title="Trykk for å kopiere kode"
+          >
+            # {household.code}
+          </button>
+          <button
+            className="btn-leave"
+            onClick={handleLeave}
+            title="Bytt husstand"
+          >
+            Bytt
+          </button>
+        </div>
       </header>
 
       {/* MAIN CONTENT */}

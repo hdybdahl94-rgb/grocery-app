@@ -80,6 +80,29 @@ html, body, #root {
   background: rgba(255,255,255,0.35);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-leave {
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: var(--white);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn-leave:active {
+  background: rgba(255,255,255,0.32);
+}
+
 /* ===== Tabs ===== */
 .tab-bar {
   display: flex;
