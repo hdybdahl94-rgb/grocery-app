@@ -3,7 +3,12 @@ import JoinHousehold from './components/JoinHousehold.jsx'
 import GroceryList from './components/GroceryList.jsx'
 import MealPlan from './components/MealPlan.jsx'
 
-const WS_URL = `ws://${window.location.hostname}:3001`
+
+const WS_URL = process.env.NODE_ENV === "production"
+  ? "wss://handleliste-y0pb.onrender.com"
+  : `ws://localhost:3001`;
+``
+
 
 export default function App() {
   const [household, setHousehold] = useState(null)
