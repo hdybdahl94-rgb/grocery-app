@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { API_URL } from '../config.js'
 
 export default function JoinHousehold({ onJoin }) {
   const [name, setName] = useState('')
@@ -13,7 +14,7 @@ export default function JoinHousehold({ onJoin }) {
     setError('')
     setLoading(true)
     try {
-      const res = await fetch(`/api/household/${code.trim().toUpperCase()}`)
+      const res = await fetch(`${API_URL}/api/household/${code.trim().toUpperCase()}`)
       const data = await res.json()
       onJoin(name.trim(), data.code, data)
     } catch {
@@ -29,9 +30,9 @@ export default function JoinHousehold({ onJoin }) {
     setError('')
     setLoading(true)
     try {
-      const res = await fetch('/api/household/create', { method: 'POST' })
+      const res = await fetch(`${API_URL}/api/household/create`, { method: 'POST' })
       const data = await res.json()
-      const res2 = await fetch(`/api/household/${data.code}`)
+      const res2 = await fetch(`${API_URL}/api/household/${data.code}`)
       const data2 = await res2.json()
       onJoin(name.trim(), data.code, data2)
     } catch {

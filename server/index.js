@@ -7,6 +7,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Helse-sjekk / rot-rute
+app.get('/', (req, res) => res.send('Handleliste-server kjører ✅'));
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
