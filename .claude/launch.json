@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "server",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+      "runtimeArgs": ["start"],
+      "cwd": "C:\\Users\\hendrik.dybdahl\\Code\\Claude\\grocery-app\\server",
+      "port": 3001
+    },
+    {
+      "name": "client",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "C:\\Users\\hendrik.dybdahl\\Code\\Claude\\grocery-app\\client",
+      "port": 5173
+    }
+  ]
+}
