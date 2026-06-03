@@ -121,6 +121,34 @@ function broadcastState(code) {
   persist(code);
 }
 
+// Legg til en vare med sammenslåing: like navn (ikke ferdighandlet) slås sammen.
+// Knyttes til en rett (mealId) som en porsjon, eller "generelt" hvis ingen rett.
+function addItem(hh, text, mealId, qty) {
+  const normalizedText = text.trim().toLowerCase();
+  const existing = hh.groceries.find(
+    g => g.text.trim().toLowerCase() === normalizedText && !g.done
+  );
+
+  if (existing) {
+    if (mealId) {
+      const portion = (existing.portions || []).find(p => p.mealId === mealId);
+      if (portion) portion.quantity += qty;
+      else existing.portions = [...(existing.portions || []), { mealId, quantity: qty }];
+    } else {
+      existing.generalQuantity = (existing.generalQuantity || 0) + qty;
+    }
+  } else {
+    hh.groceries.push({
+      id: Date.now().toString() + Math.random().toString(36).slice(2),
+      text: text.trim(),
+      checked: false,
+      done: false,
+      portions: mealId ? [{ mealId, quantity: qty }] : [],
+      generalQuantity: mealId ? 0 : qty,
+    });
+  }
+}
+
 // Synkroniser malen for en rett: lagrer gjeldende ingredienser per rettnavn (upsert)
 function syncTemplate(hh, mealId) {
   const meal = hh.meals.find(m => m.id === mealId);
@@ -190,33 +218,9 @@ wss.on('connection', (ws) => {
       }
 
       case 'ADD_ITEM': {
-        const normalizedText = msg.text.trim().toLowerCase();
         const mealId = msg.mealId || null;
         const qty = msg.quantity || 1;
-
-        const existing = hh.groceries.find(
-          g => g.text.trim().toLowerCase() === normalizedText && !g.done
-        );
-
-        if (existing) {
-          if (mealId) {
-            const portion = (existing.portions || []).find(p => p.mealId === mealId);
-            if (portion) portion.quantity += qty;
-            else existing.portions = [...(existing.portions || []), { mealId, quantity: qty }];
-          } else {
-            existing.generalQuantity = (existing.generalQuantity || 0) + qty;
-          }
-        } else {
-          hh.groceries.push({
-            id: Date.now().toString() + Math.random().toString(36).slice(2),
-            text: msg.text.trim(),
-            checked: false,
-            done: false,
-            portions: mealId ? [{ mealId, quantity: qty }] : [],
-            generalQuantity: mealId ? 0 : qty,
-          });
-        }
-
+        addItem(hh, msg.text, mealId, qty);
         if (mealId) syncTemplate(hh, mealId);
         broadcastState(code);
         break;
@@ -280,14 +284,8 @@ wss.on('connection', (ws) => {
           );
           if (template && template.ingredients) {
             template.ingredients.forEach(ing => {
-              hh.groceries.push({
-                id: Date.now().toString() + Math.random().toString(36).slice(2),
-                text: ing.text,
-                checked: false,
-                done: false,
-                portions: [{ mealId: newMeal.id, quantity: ing.quantity }],
-                generalQuantity: 0,
-              });
+              // Bruk samme sammenslåingslogikk: slår sammen med eksisterende like varer
+              addItem(hh, ing.text, newMeal.id, ing.quantity);
             });
           }
         }
