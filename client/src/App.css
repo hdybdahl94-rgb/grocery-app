@@ -103,6 +103,17 @@ html, body, #root {
   background: rgba(255,255,255,0.32);
 }
 
+.sync-banner {
+  background: #fff8e1;
+  color: #8a6d00;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid #ffe082;
+  flex-shrink: 0;
+}
+
 /* ===== Tabs ===== */
 .tab-bar {
   display: flex;

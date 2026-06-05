@@ -5,6 +5,9 @@ import MealPlan from './components/MealPlan.jsx'
 import { WS_URL } from './config.js'
 
 const STORAGE_KEY = 'handleliste:household'
+const STATE_KEY = (code) => `handleliste:state:${code}`
+
+const EMPTY_STATE = { groceries: [], meals: [], mealTemplates: [] }
 
 function loadStoredHousehold() {
   try {
@@ -16,16 +19,42 @@ function loadStoredHousehold() {
   return null
 }
 
+// Hent lagret liste fra mobilens minne (vises umiddelbart ved oppstart)
+function loadCachedState(code) {
+  try {
+    const raw = localStorage.getItem(STATE_KEY(code))
+    if (raw) {
+      const p = JSON.parse(raw)
+      return {
+        groceries: p.groceries || [],
+        meals: p.meals || [],
+        mealTemplates: p.mealTemplates || [],
+      }
+    }
+  } catch {}
+  return { ...EMPTY_STATE }
+}
+
+function saveCachedState(code, s) {
+  try { localStorage.setItem(STATE_KEY(code), JSON.stringify(s)) } catch {}
+}
+
+const initialHousehold = loadStoredHousehold()
+
 export default function App() {
   // Husk husstanden fra forrige besøk
-  const [household, setHousehold] = useState(loadStoredHousehold)
-  const [state, setState] = useState({ groceries: [], meals: [], mealTemplates: [] })
+  const [household, setHousehold] = useState(initialHousehold)
+  // Vis lagret liste umiddelbart – uten å vente på backend
+  const [state, setState] = useState(() =>
+    initialHousehold ? loadCachedState(initialHousehold.code) : { ...EMPTY_STATE }
+  )
   const [tab, setTab] = useState('grocery')
   const [connected, setConnected] = useState(false)
   const [toast, setToast] = useState(null)
 
   const wsRef = useRef(null)
   const toastTimer = useRef(null)
+  const queueRef = useRef([]) // endringer som venter på at backend våkner
 
   // ✅ Toast helper
   const showToast = useCallback((msg) => {
@@ -34,17 +63,15 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), 1800)
   }, [])
 
-  // ✅ Send WebSocket message
-  
-const sendMessage = useCallback((msg) => {
-  if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-    console.log('SENDER:', msg)
-    wsRef.current.send(JSON.stringify(msg))
-  } else {
-    console.log('WebSocket IKKE åpen', wsRef.current?.readyState)
-  }
-}, [])
-
+  // ✅ Send melding – eller legg i kø hvis backend ikke er tilgjengelig ennå
+  const sendMessage = useCallback((msg) => {
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(msg))
+    } else {
+      queueRef.current.push(msg) // sendes automatisk når tilkoblet
+    }
+  }, [])
 
   // ✅ WebSocket connection
   useEffect(() => {
@@ -52,6 +79,7 @@ const sendMessage = useCallback((msg) => {
 
     let ws
     let reconnectTimeout
+    let closed = false
 
     function connect() {
       ws = new WebSocket(WS_URL)
@@ -60,17 +88,23 @@ const sendMessage = useCallback((msg) => {
       ws.onopen = () => {
         setConnected(true)
         ws.send(JSON.stringify({ action: 'JOIN', code: household.code }))
+        // Send alle endringer som ble gjort mens backend sov
+        const queued = queueRef.current
+        queueRef.current = []
+        queued.forEach(m => ws.send(JSON.stringify(m)))
       }
 
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data)
           if (data.type === 'STATE') {
-            setState({
+            const next = {
               groceries: data.groceries || [],
               meals: data.meals || [],
-              mealTemplates: data.mealTemplates || []
-            })
+              mealTemplates: data.mealTemplates || [],
+            }
+            setState(next)
+            saveCachedState(household.code, next) // oppdater lokal cache
           }
         } catch {}
       }
@@ -78,17 +112,16 @@ const sendMessage = useCallback((msg) => {
       ws.onclose = () => {
         setConnected(false)
         wsRef.current = null
-        reconnectTimeout = setTimeout(connect, 2000)
+        if (!closed) reconnectTimeout = setTimeout(connect, 2000)
       }
 
-      ws.onerror = () => {
-        ws.close()
-      }
+      ws.onerror = () => ws.close()
     }
 
     connect()
 
     return () => {
+      closed = true
       clearTimeout(reconnectTimeout)
       if (ws) ws.close()
     }
@@ -98,21 +131,26 @@ const sendMessage = useCallback((msg) => {
   function handleJoin(name, code, initialState) {
     const hh = { name, code }
     setHousehold(hh)
-    // Husk husstanden til neste besøk
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(hh)) } catch {}
-    setState({
+    const next = {
       groceries: initialState.groceries || [],
       meals: initialState.meals || [],
-      mealTemplates: initialState.mealTemplates || []
-    })
+      mealTemplates: initialState.mealTemplates || [],
+    }
+    setState(next)
+    saveCachedState(code, next)
   }
 
   // ✅ Bytt husstand (logg ut)
   function handleLeave() {
     if (!confirm('Vil du bytte husstand? Du må skrive inn navn og kode på nytt.')) return
-    try { localStorage.removeItem(STORAGE_KEY) } catch {}
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+      if (household) localStorage.removeItem(STATE_KEY(household.code))
+    } catch {}
+    queueRef.current = []
     setHousehold(null)
-    setState({ groceries: [], meals: [], mealTemplates: [] })
+    setState({ ...EMPTY_STATE })
   }
 
   // ✅ Copy code
@@ -169,6 +207,13 @@ const sendMessage = useCallback((msg) => {
           </button>
         </div>
       </header>
+
+      {/* TILKOBLINGSSTATUS */}
+      {!connected && (
+        <div className="sync-banner">
+          🔄 Viser lagret liste – kobler til server…
+        </div>
+      )}
 
       {/* MAIN CONTENT */}
       <main className="tab-content">
