@@ -10,6 +10,8 @@ const QUEUE_KEY = (code) => `handleliste:queue:${code}`
 
 const EMPTY_STATE = { groceries: [], meals: [], mealTemplates: [] }
 
+const initialCodeFromUrl = getCodeFromUrl()
+
 function loadStoredHousehold() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -82,6 +84,15 @@ function removeEmptyItems(groceries) {
     ...item,
     portions: (item.portions || []).filter(p => p.quantity > 0),
   }))
+}
+
+function getCodeFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('code')
+  } catch {
+    return null
+  }
 }
 
 function applyLocalMessage(prev, msg) {
@@ -434,22 +445,41 @@ export default function App() {
   }
 
   // ✅ Copy code
+
   function handleCopyCode() {
     if (!household) return
 
-    navigator.clipboard.writeText(household.code)
+    const url = `${window.location.origin}?code=${household.code}`
+
+    navigator.clipboard.writeText(url)
       .then(() => {
-        showToast('Kode kopiert! Del med husstandsmedlemmer')
+        showToast('Link kopiert! Del med husstanden ✅')
       })
       .catch(() => {
-        showToast(`Kode: ${household.code}`)
+        showToast(url)
       })
   }
 
+  
+function getCodeFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('code')
+  } catch {}
+  return null
+}
+
+
+
   // ✅ Not logged in yet
   if (!household) {
-    return <JoinHousehold onJoin={handleJoin} />
-  }
+  return (
+    <JoinHousehold
+      onJoin={handleJoin}
+      initialCode={initialCodeFromUrl}
+    />
+  )
+}
 
   return (
     <div className="app">

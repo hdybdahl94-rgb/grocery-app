@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { API_URL } from '../config.js'
 
-export default function JoinHousehold({ onJoin }) {
+export default function JoinHousehold({ onJoin, initialCode }) {
   const [name, setName] = useState('')
-  const [code, setCode] = useState('')
+  const [code, setCode] = useState(initialCode || '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -49,6 +49,13 @@ export default function JoinHousehold({ onJoin }) {
       <p>Del listen med hele husstanden</p>
 
       <div className="join-card">
+
+        {initialCode && (
+          <p className="info-text">
+            🔗 Invitasjonslink åpnet – skriv inn navnet ditt for å bli med
+          </p>
+        )}
+
         <div className="input-group">
           <label>Ditt navn</label>
           <input
