@@ -17,14 +17,20 @@ export default function GroceryList({ groceries, meals, sendMessage, householdCo
   }
 
   function handleToggle(id) {
+    const item = groceries.find(g => g.id === id)
+    if (item?.pending) return
     sendMessage({ action: 'TOGGLE_ITEM', code: householdCode, id })
   }
 
   function handleDelete(id) {
+    const item = groceries.find(g => g.id === id)
+    if (item?.pending) return
     sendMessage({ action: 'DELETE_ITEM', code: householdCode, id })
   }
 
   function handleSetPortion(id, mealId, quantity) {
+    const item = groceries.find(g => g.id === id)
+    if (item?.pending) return
     sendMessage({ action: 'SET_PORTION', code: householdCode, id, mealId: mealId || null, quantity })
   }
 
@@ -89,7 +95,8 @@ function GroceryItem({ item, mealMap, onToggle, onDelete, onSetPortion }) {
   const isGeneral = portions.length === 0
 
   return (
-    <div className={`grocery-item${item.checked ? ' checked' : ''}`}>
+    <div className={`grocery-item${item.checked ? ' checked' : ''}${item.pending ? ' pending' : ''}`}>
+      {item.pending && <span className="pending-badge">⏳</span>}
       <button className="grocery-checkbox" onClick={() => onToggle(item.id)}
         aria-label={item.checked ? 'Merk som ikke hentet' : 'Merk som hentet'}>
         {item.checked ? '✓' : ''}
