@@ -93,6 +93,11 @@ export default function MealPlan({ meals, groceries, mealTemplates, sendMessage,
     sendMessage({ action: 'SET_PORTION', code: householdCode, id, mealId, quantity })
   }
 
+  function toggleIngredients(mealId) {
+    setExpandedMealId(prev => prev === mealId ? null : mealId)
+    setIngredientText('')
+  }
+
   return (
     <div>
       <form className="meal-add-form" onSubmit={handleAddMeal}>
@@ -138,7 +143,13 @@ export default function MealPlan({ meals, groceries, mealTemplates, sendMessage,
 
           return (
             <div className="meal-card" key={meal.id}>
-              <div className="meal-card-header">
+
+              <div
+                className="meal-card-header"
+                onClick={() => toggleIngredients(meal.id)}
+                style={{ cursor: 'pointer' }}
+              >
+
                 <span className="meal-card-icon">{getMealIcon(meal.id)}</span>
                 <div className="meal-card-body">
                   <div className="meal-card-day">{meal.day}</div>
@@ -148,11 +159,25 @@ export default function MealPlan({ meals, groceries, mealTemplates, sendMessage,
                   )}
                 </div>
                 <div className="meal-card-actions">
-                  <button className={`btn-ingredients${isExpanded ? ' active' : ''}`}
-                    onClick={() => { setExpandedMealId(prev => prev === meal.id ? null : meal.id); setIngredientText('') }}>
+                  <button
+                    className={`btn-ingredients${isExpanded ? ' active' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleIngredients(meal.id)
+                    }}
+                  >
                     🧺{linked.length > 0 ? ` ${linked.length}` : ''}
                   </button>
-                  <button className="btn-delete" onClick={() => handleDeleteMeal(meal.id)} aria-label="Slett middag">✕</button>
+
+                  <button
+                    className="btn-delete"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteMeal(meal.id)
+                    }}
+                    aria-label="Slett middag"
+                  >
+                    ✕</button>
                 </div>
               </div>
 
