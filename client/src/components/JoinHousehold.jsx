@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { API_URL } from '../config.js'
 
-export default function JoinHousehold({ onJoin, initialCode, households = [],  onRemove }) {
+export default function JoinHousehold({ onJoin, initialCode, households = [], onRemove }) {
   const [name, setName] = useState('')
   const [code, setCode] = useState(initialCode || '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [label, setLabel] = useState('')
+
 
 
   async function handleJoin(e) {
@@ -31,22 +33,47 @@ export default function JoinHousehold({ onJoin, initialCode, households = [],  o
   }
 
   async function handleCreate(e) {
-    if (e) e.preventDefault()
-    if (!name.trim()) { setError('Skriv inn navnet ditt først'); return }
-    setError('')
-    setLoading(true)
-    try {
-      const res = await fetch(`${API_URL}/api/household/create`, { method: 'POST' })
-      const data = await res.json()
-      const res2 = await fetch(`${API_URL}/api/household/${data.code}`)
-      const data2 = await res2.json()
-      onJoin(name.trim(), data.code, data2, true)
-    } catch {
-      setError('Kunne ikke koble til serveren.')
-    } finally {
-      setLoading(false)
-    }
+  if (e) e.preventDefault()
+
+  if (!name.trim()) {
+    setError('Skriv inn navnet ditt først')
+    return
   }
+
+  setError('')
+  setLoading(true)
+
+  try {
+    const res = await fetch(`${API_URL}/api/household/create`, { method: 'POST' })
+
+    // ✅ NY: sjekk response
+    if (!res.ok) {
+      throw new Error('Create failed')
+    }
+
+    const data = await res.json()
+
+    const res2 = await fetch(`${API_URL}/api/household/${data.code}`)
+
+    // ✅ NY: sjekk response
+    if (!res2.ok) {
+      throw new Error('Fetch household failed')
+    }
+
+    const data2 = await res2.json()
+
+    onJoin(name.trim(), data.code, {
+      ...data2,
+      label: label || ''
+    })
+
+  } catch (err) {
+    console.error("FEIL:", err) // ✅ viktig debug
+    setError('Kunne ikke koble til serveren.')
+  } finally {
+    setLoading(false)
+  }
+}
 
   return (
     <div className="join-screen" style={{ padding: '20px', boxSizing: 'border-box', minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
@@ -82,6 +109,24 @@ export default function JoinHousehold({ onJoin, initialCode, households = [],  o
             }}
           />
         </div>
+
+        <div className="input-group">
+          <label>Navn på husstand (valgfritt)</label>
+          <input
+            placeholder="f.eks. Hjemme, Hytte..."
+            value={label}
+            onChange={e => setLabel(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid #ccc',
+              fontSize: '16px',
+              boxSizing: 'border-box'
+            }}
+          />
+        </div>
+
 
         {/* 2. DINE HUSSTANDER - Rendres her, trygt plassert inni det hvite kortet */}
         {households && households.length > 0 && (

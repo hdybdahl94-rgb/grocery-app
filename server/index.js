@@ -18,9 +18,9 @@ const wss = new WebSocket.Server({ server });
 // Setter DATABASE_URL i miljøet i produksjon. Lokalt uten DB → ren in-memory.
 const pool = process.env.DATABASE_URL
   ? new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-    })
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  })
   : null;
 
 async function initDb() {
@@ -43,6 +43,7 @@ const households = {};
 const clientHousehold = new Map();
 
 function normalize(data) {
+  data.label = data.label || ''
   data.groceries = data.groceries || [];
   data.meals = data.meals || [];
   data.mealTemplates = data.mealTemplates || [];
@@ -53,7 +54,7 @@ function normalize(data) {
 async function ensureHousehold(code) {
   if (households[code]) return households[code];
 
-  let data = { groceries: [], meals: [], mealTemplates: [] };
+  let data = { label: '', groceries: [], meals: [], mealTemplates: [] };
   if (pool) {
     try {
       const r = await pool.query('SELECT data FROM households WHERE code = $1', [code]);
@@ -186,7 +187,7 @@ function syncTemplate(hh, mealId) {
 app.get('/api/household/:code', async (req, res) => {
   const code = req.params.code.toUpperCase();
   const hh = await ensureHousehold(code);
-  res.json({ code, groceries: hh.groceries, meals: hh.meals, mealTemplates: hh.mealTemplates });
+  res.json({ code, label: hh.label, groceries: hh.groceries, meals: hh.meals, mealTemplates: hh.mealTemplates });
 });
 
 app.post('/api/household/create', async (req, res) => {
@@ -216,6 +217,12 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ type: 'STATE', ...hh }));
         break;
       }
+      case 'SET_LABEL': {
+        hh.label = msg.label || ''
+        broadcastState(code)
+        break;
+      }
+
 
       case 'ADD_ITEM': {
         const mealId = msg.mealId || null;

@@ -458,18 +458,9 @@ export default function App() {
     }
   }, [household, showToast])
 
-  function handleJoin(name, code, initialState = {}, askForLabel = false) {
-    let label = ''
-
-    // ✅ bare spør hvis vi lager ny
-    if (askForLabel) {
-      const input = prompt("Gi et navn til husstanden (valgfritt, f.eks. Hjemme eller Hytte)")
-      label = input || ''
-    } else {
-      // ✅ behold eksisterende hvis finnes
-      const existing = loadHouseholds().find(h => h.code === code)
-      label = existing?.label || ''
-    }
+  function handleJoin(name, code, initialState = {}) {
+    // ✅ label kommer enten fra backend eller UI
+    const label = initialState.label || ''
 
     const hh = {
       name,
@@ -494,6 +485,19 @@ export default function App() {
 
     setState(next)
     saveCachedState(code, next)
+
+    // ✅ send label til backend hvis vi har en ny
+    if (initialState.label) {
+      const ws = wsRef.current
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          action: 'SET_LABEL',
+          code,
+          label
+        }))
+      }
+    }
   }
 
   function handleLeave() {
