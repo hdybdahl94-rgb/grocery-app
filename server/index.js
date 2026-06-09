@@ -43,11 +43,14 @@ const households = {};
 const clientHousehold = new Map();
 
 function normalize(data) {
+  if (!data) data = {}
+
   data.label = data.label || ''
-  data.groceries = data.groceries || [];
-  data.meals = data.meals || [];
-  data.mealTemplates = data.mealTemplates || [];
-  return data;
+  data.groceries = data.groceries || []
+  data.meals = data.meals || []
+  data.mealTemplates = data.mealTemplates || []
+
+  return data
 }
 
 // Hent husstand: fra cache, ellers fra databasen, ellers opprett tom.
@@ -118,9 +121,18 @@ function broadcast(code, data) {
 function broadcastState(code) {
   const hh = households[code];
   if (!hh) return;
-  broadcast(code, { type: 'STATE', groceries: hh.groceries, meals: hh.meals, mealTemplates: hh.mealTemplates || [] });
+
+  broadcast(code, {
+    type: 'STATE',
+    label: hh.label || '',
+    groceries: hh.groceries || [],
+    meals: hh.meals || [],
+    mealTemplates: hh.mealTemplates || []
+  });
+
   persist(code);
 }
+``
 
 // Legg til en vare med sammenslåing: like navn (ikke ferdighandlet) slås sammen.
 // Knyttes til en rett (mealId) som en porsjon, eller "generelt" hvis ingen rett.

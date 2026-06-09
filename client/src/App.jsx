@@ -393,6 +393,19 @@ export default function App() {
           const data = JSON.parse(e.data)
 
           if (data.type === 'STATE') {
+            // ✅ oppdater label på aktiv husstand hvis server sender den
+            if (data.label !== undefined) {
+              setHousehold((prev) => {
+                if (!prev) return prev
+                const updated = {
+                  ...prev,
+                  label: data.label || ''
+                }
+                saveHousehold(updated)
+                return updated
+              })
+            }
+
             setState((prev) => {
               const next = {
                 groceries:
@@ -488,14 +501,19 @@ export default function App() {
 
     // ✅ send label til backend hvis vi har en ny
     if (initialState.label) {
+      const labelMsg = {
+        action: 'SET_LABEL',
+        code,
+        label
+      }
+
       const ws = wsRef.current
 
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          action: 'SET_LABEL',
-          code,
-          label
-        }))
+        ws.send(JSON.stringify(labelMsg))
+      } else {
+        queueRef.current = [...queueRef.current, labelMsg]
+        saveQueuedMessages(code, queueRef.current)
       }
     }
   }
