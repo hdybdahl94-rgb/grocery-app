@@ -4,25 +4,74 @@ import GroceryList from './components/GroceryList.jsx'
 import MealPlan from './components/MealPlan.jsx'
 import { WS_URL } from './config.js'
 
-const STORAGE_KEY = 'handleliste:household'
+const STORAGE_KEY = 'handleliste:households'
 const STATE_KEY = (code) => `handleliste:state:${code}`
 const QUEUE_KEY = (code) => `handleliste:queue:${code}`
 
 const EMPTY_STATE = { groceries: [], meals: [], mealTemplates: [] }
 
+function getCodeFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('code')
+  } catch {
+    return null
+  }
+}
+
 const initialCodeFromUrl = getCodeFromUrl()
+
+function loadHouseholds() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    }
+
+    // fallback: gammelt format med én husstand
+    const old = localStorage.getItem('handleliste:household')
+    if (old) {
+      const parsed = JSON.parse(old)
+      return parsed ? [parsed] : []
+    }
+  } catch { }
+
+  return []
+}
+
+function saveHousehold(hh) {
+  const existing = loadHouseholds()
+
+  const updated = [
+    { ...hh, lastUsed: Date.now() },
+    ...existing.filter((h) => h.code !== hh.code),
+  ]
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+}
 
 function loadStoredHousehold() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
+
     const parsed = JSON.parse(raw)
-    if (parsed && parsed.name && parsed.code) return parsed
+
+    // nytt format: array av husstander
+    if (Array.isArray(parsed)) {
+      return parsed.length > 0 ? parsed[0] : null
+    }
+
+    // gammelt format: ett objekt
+    if (parsed && parsed.name && parsed.code) {
+      return parsed
+    }
   } catch { }
+
   return null
 }
 
-// Hent lagret liste fra mobilens minne (vises umiddelbart ved oppstart)
 function loadCachedState(code) {
   try {
     const raw = localStorage.getItem(STATE_KEY(code))
@@ -35,11 +84,14 @@ function loadCachedState(code) {
       }
     }
   } catch { }
+
   return { ...EMPTY_STATE }
 }
 
-function saveCachedState(code, s) {
-  try { localStorage.setItem(STATE_KEY(code), JSON.stringify(s)) } catch { }
+function saveCachedState(code, state) {
+  try {
+    localStorage.setItem(STATE_KEY(code), JSON.stringify(state))
+  } catch { }
 }
 
 function loadQueuedMessages(code) {
@@ -48,6 +100,7 @@ function loadQueuedMessages(code) {
     const parsed = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed : []
   } catch { }
+
   return []
 }
 
@@ -63,7 +116,6 @@ function clearQueuedMessages(code) {
   } catch { }
 }
 
-
 function makeTempId(prefix = 'tmp') {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return `${prefix}:${crypto.randomUUID()}`
@@ -76,23 +128,16 @@ function normalizeText(text) {
 }
 
 function removeEmptyItems(groceries) {
-  return groceries.filter(item => {
-    const general = item.generalQuantity || 0
-    const portions = (item.portions || []).filter(p => p.quantity > 0)
-    return general > 0 || portions.length > 0
-  }).map(item => ({
-    ...item,
-    portions: (item.portions || []).filter(p => p.quantity > 0),
-  }))
-}
-
-function getCodeFromUrl() {
-  try {
-    const params = new URLSearchParams(window.location.search)
-    return params.get('code')
-  } catch {
-    return null
-  }
+  return groceries
+    .filter((item) => {
+      const general = item.generalQuantity || 0
+      const portions = (item.portions || []).filter((p) => p.quantity > 0)
+      return general > 0 || portions.length > 0
+    })
+    .map((item) => ({
+      ...item,
+      portions: (item.portions || []).filter((p) => p.quantity > 0),
+    }))
 }
 
 function applyLocalMessage(prev, msg) {
@@ -102,17 +147,20 @@ function applyLocalMessage(prev, msg) {
       const mealId = msg.mealId || null
 
       const groceries = [...prev.groceries]
-      const existing = groceries.find(item =>
-        !item.done && normalizeText(item.text) === normalizeText(text)
+      const existing = groceries.find(
+        (item) => !item.done && normalizeText(item.text) === normalizeText(text)
       )
 
       if (existing) {
         if (mealId) {
           const portions = [...(existing.portions || [])]
-          const idx = portions.findIndex(p => p.mealId === mealId)
+          const idx = portions.findIndex((p) => p.mealId === mealId)
 
           if (idx >= 0) {
-            portions[idx] = { ...portions[idx], quantity: portions[idx].quantity + 1 }
+            portions[idx] = {
+              ...portions[idx],
+              quantity: portions[idx].quantity + 1,
+            }
           } else {
             portions.push({ mealId, quantity: 1 })
           }
@@ -120,23 +168,22 @@ function applyLocalMessage(prev, msg) {
           return {
             ...prev,
             groceries: removeEmptyItems(
-              groceries.map(g => g.id === existing.id
-                ? { ...g, portions }
-                : g
+              groceries.map((g) =>
+                g.id === existing.id ? { ...g, portions } : g
               )
-            )
+            ),
           }
+        }
 
-        } else {
-          return {
-            ...prev,
-            groceries: removeEmptyItems(
-              groceries.map(g => g.id === existing.id
+        return {
+          ...prev,
+          groceries: removeEmptyItems(
+            groceries.map((g) =>
+              g.id === existing.id
                 ? { ...g, generalQuantity: (g.generalQuantity || 0) + 1 }
                 : g
-              )
             )
-          }
+          ),
         }
       }
 
@@ -150,40 +197,38 @@ function applyLocalMessage(prev, msg) {
         portions: mealId ? [{ mealId, quantity: 1 }] : [],
       })
 
-      return { ...prev, groceries: groceries }
+      return { ...prev, groceries }
     }
 
     case 'TOGGLE_ITEM': {
       return {
         ...prev,
-        groceries: prev.groceries.map(item =>
-          item.id === msg.id
-            ? { ...item, checked: !item.checked }
-            : item
-        )
+        groceries: prev.groceries.map((item) =>
+          item.id === msg.id ? { ...item, checked: !item.checked } : item
+        ),
       }
     }
 
     case 'DELETE_ITEM': {
       return {
         ...prev,
-        groceries: prev.groceries.filter(item => item.id !== msg.id)
+        groceries: prev.groceries.filter((item) => item.id !== msg.id),
       }
     }
 
     case 'SET_PORTION': {
-      const groceries = prev.groceries.map(item => {
+      const groceries = prev.groceries.map((item) => {
         if (item.id !== msg.id) return item
 
         if (!msg.mealId) {
           return {
             ...item,
-            generalQuantity: Math.max(0, msg.quantity)
+            generalQuantity: Math.max(0, msg.quantity),
           }
         }
 
         const portions = [...(item.portions || [])]
-        const idx = portions.findIndex(p => p.mealId === msg.mealId)
+        const idx = portions.findIndex((p) => p.mealId === msg.mealId)
 
         if (idx >= 0) {
           if (msg.quantity <= 0) {
@@ -197,22 +242,22 @@ function applyLocalMessage(prev, msg) {
 
         return {
           ...item,
-          portions
+          portions,
         }
       })
 
       return {
         ...prev,
-        groceries: removeEmptyItems(groceries)
+        groceries: removeEmptyItems(groceries),
       }
     }
 
     case 'CLEAR_CHECKED': {
       return {
         ...prev,
-        groceries: prev.groceries.map(item =>
+        groceries: prev.groceries.map((item) =>
           item.checked ? { ...item, done: true } : item
-        )
+        ),
       }
     }
 
@@ -226,12 +271,12 @@ function applyLocalMessage(prev, msg) {
 
       let next = {
         ...prev,
-        meals: [...prev.meals, newMeal]
+        meals: [...prev.meals, newMeal],
       }
 
       if (msg.useTemplate) {
         const template = (prev.mealTemplates || []).find(
-          t => normalizeText(t.mealName) === normalizeText(msg.note)
+          (t) => normalizeText(t.mealName) === normalizeText(msg.note)
         )
 
         if (template?.ingredients?.length) {
@@ -251,19 +296,19 @@ function applyLocalMessage(prev, msg) {
     }
 
     case 'DELETE_MEAL': {
-      const meals = prev.meals.filter(meal => meal.id !== msg.id)
+      const meals = prev.meals.filter((meal) => meal.id !== msg.id)
 
       const groceries = removeEmptyItems(
-        prev.groceries.map(item => ({
+        prev.groceries.map((item) => ({
           ...item,
-          portions: (item.portions || []).filter(p => p.mealId !== msg.id)
+          portions: (item.portions || []).filter((p) => p.mealId !== msg.id),
         }))
       )
 
       return {
         ...prev,
         meals,
-        groceries
+        groceries,
       }
     }
 
@@ -275,12 +320,16 @@ function applyLocalMessage(prev, msg) {
 const initialHousehold = loadStoredHousehold()
 
 export default function App() {
-  // Husk husstanden fra forrige besøk
   const [household, setHousehold] = useState(initialHousehold)
-  // Vis lagret liste umiddelbart – uten å vente på backend
+
+  const [households, setHouseholds] = useState(() =>
+    loadHouseholds().sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0))
+  )
+
   const [state, setState] = useState(() =>
     initialHousehold ? loadCachedState(initialHousehold.code) : { ...EMPTY_STATE }
   )
+
   const [tab, setTab] = useState('grocery')
   const [connected, setConnected] = useState(false)
   const [toast, setToast] = useState(null)
@@ -289,41 +338,39 @@ export default function App() {
   const toastTimer = useRef(null)
   const queueRef = useRef(
     initialHousehold ? loadQueuedMessages(initialHousehold.code) : []
-  ) // endringer som venter på at backend våkner
+  )
 
-  // ✅ Toast helper
   const showToast = useCallback((msg) => {
     setToast(msg)
     clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), 1800)
   }, [])
 
-  // ✅ Send melding – eller legg i kø hvis backend ikke er tilgjengelig ennå
-  const sendMessage = useCallback((msg) => {
-    if (!household) return
+  const sendMessage = useCallback(
+    (msg) => {
+      if (!household) return
 
-    // 1. Oppdater UI lokalt umiddelbart
-    setState(prev => {
-      const next = applyLocalMessage(prev, msg)
-      saveCachedState(household.code, next)
-      return next
-    })
+      // oppdater UI lokalt umiddelbart
+      setState((prev) => {
+        const next = applyLocalMessage(prev, msg)
+        saveCachedState(household.code, next)
+        return next
+      })
 
-    // 2. Send til backend hvis mulig – ellers legg i persistent kø
-    const ws = wsRef.current
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg))
-    } else {
-      queueRef.current = [...queueRef.current, msg]
-      saveQueuedMessages(household.code, queueRef.current)
-    }
-  }, [household])
+      // send til backend hvis mulig – ellers legg i persistent kø
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(msg))
+      } else {
+        queueRef.current = [...queueRef.current, msg]
+        saveQueuedMessages(household.code, queueRef.current)
+      }
+    },
+    [household]
+  )
 
-  // ✅ WebSocket connection
   useEffect(() => {
     if (!household) return
-
-
 
     let ws
     let reconnectTimeout
@@ -334,30 +381,28 @@ export default function App() {
       wsRef.current = ws
 
       ws.onopen = () => {
-
         setConnected(true)
         ws.send(JSON.stringify({ action: 'JOIN', code: household.code }))
 
-
         const queued = [...queueRef.current]
-
-        // IKKE tøm enda!
-        queued.forEach(m => ws.send(JSON.stringify(m)))
-
+        queued.forEach((m) => ws.send(JSON.stringify(m)))
       }
+
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data)
 
           if (data.type === 'STATE') {
-            setState(prev => {
+            setState((prev) => {
               const next = {
-                groceries: (data.groceries && data.groceries.length > 0)
-                  ? data.groceries
-                  : prev.groceries,
-                meals: (data.meals && data.meals.length > 0)
-                  ? data.meals
-                  : prev.meals, // ✅ bruk prev, ikke state
+                groceries:
+                  data.groceries && data.groceries.length > 0
+                    ? data.groceries
+                    : prev.groceries,
+                meals:
+                  data.meals && data.meals.length > 0
+                    ? data.meals
+                    : prev.meals,
                 mealTemplates: data.mealTemplates || [],
               }
 
@@ -366,25 +411,24 @@ export default function App() {
                 (data.meals?.length || 0) === 0
 
               if (!isServerEmpty) {
-                next.groceries = next.groceries.map(item => ({
+                next.groceries = next.groceries.map((item) => ({
                   ...item,
                   pending: false,
                 }))
 
-                next.meals = next.meals.map(meal => ({
+                next.meals = next.meals.map((meal) => ({
                   ...meal,
                   pending: false,
                 }))
               }
 
-              // cache + queue håndtering
               if (household?.code) {
                 saveCachedState(household.code, next)
 
                 if (queueRef.current.length > 0) {
                   queueRef.current = []
-                  saveQueuedMessages(household.code, [])
-                  showToast("✅ Endringer synkronisert")
+                  clearQueuedMessages(household.code)
+                  showToast('✅ Endringer synkronisert')
                 }
               }
 
@@ -401,6 +445,7 @@ export default function App() {
           reconnectTimeout = setTimeout(connect, 2000)
         }
       }
+
       ws.onerror = () => ws.close()
     }
 
@@ -411,47 +456,58 @@ export default function App() {
       clearTimeout(reconnectTimeout)
       if (ws) ws.close()
     }
-  }, [household])
+  }, [household, showToast])
 
-  // ✅ Join household
-  function handleJoin(name, code, initialState) {
-    const hh = { name, code }
+  function handleJoin(name, code, initialState = {}, askForLabel = false) {
+    let label = ''
+
+    // ✅ bare spør hvis vi lager ny
+    if (askForLabel) {
+      const input = prompt("Gi et navn til husstanden (valgfritt, f.eks. Hjemme eller Hytte)")
+      label = input || ''
+    } else {
+      // ✅ behold eksisterende hvis finnes
+      const existing = loadHouseholds().find(h => h.code === code)
+      label = existing?.label || ''
+    }
+
+    const hh = {
+      name,
+      code,
+      label
+    }
+
     setHousehold(hh)
     queueRef.current = loadQueuedMessages(code)
 
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(hh)) } catch { }
+    saveHousehold(hh)
+
+    setHouseholds(
+      loadHouseholds().sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0))
+    )
+
     const next = {
       groceries: initialState.groceries || [],
       meals: initialState.meals || [],
       mealTemplates: initialState.mealTemplates || [],
     }
+
     setState(next)
     saveCachedState(code, next)
   }
 
-  // ✅ Bytt husstand (logg ut)
   function handleLeave() {
-    if (!confirm('Vil du bytte husstand? Du må skrive inn navn og kode på nytt.')) return
-    try {
-      localStorage.removeItem(STORAGE_KEY)
-      if (household) {
-        localStorage.removeItem(STATE_KEY(household.code))
-        clearQueuedMessages(household.code)
-      }
-    } catch { }
-    queueRef.current = []
     setHousehold(null)
-    setState({ ...EMPTY_STATE })
+    setConnected(false)
   }
-
-  // ✅ Copy code
 
   function handleCopyCode() {
     if (!household) return
 
     const url = `${window.location.origin}?code=${household.code}`
 
-    navigator.clipboard.writeText(url)
+    navigator.clipboard
+      .writeText(url)
       .then(() => {
         showToast('Link kopiert! Del med husstanden ✅')
       })
@@ -460,26 +516,24 @@ export default function App() {
       })
   }
 
-  
-function getCodeFromUrl() {
-  try {
-    const params = new URLSearchParams(window.location.search)
-    return params.get('code')
-  } catch {}
-  return null
-}
+  function removeHousehold(code) {
+    const updated = loadHouseholds().filter(h => h.code !== code)
 
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+    setHouseholds(updated)
+  }
 
-
-  // ✅ Not logged in yet
-  if (!household) {
-  return (
-    <JoinHousehold
-      onJoin={handleJoin}
-      initialCode={initialCodeFromUrl}
-    />
-  )
-}
+  // Viktig: conditional return kommer ETTER alle hooks
+  if (!household || !household.code || !household.name) {
+    return (
+      <JoinHousehold
+        onJoin={handleJoin}
+        initialCode={initialCodeFromUrl}
+        households={households}
+        onRemove={removeHousehold}
+      />
+    )
+  }
 
   return (
     <div className="app">
@@ -494,10 +548,10 @@ function getCodeFromUrl() {
               height: 8,
               borderRadius: '50%',
               display: 'inline-block',
-              marginRight: 8
+              marginRight: 8,
             }}
           />
-          Hei, {household.name}!
+          Hei, {household.name}! ({household.label || household.code})
         </h1>
 
         <div className="header-actions">

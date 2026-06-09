@@ -1095,3 +1095,54 @@ html, body, #root {
   color: var(--white);
 }
 
+/* ===== Lagrede husstander inni Join-kortet ===== */
+.saved-households {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 12px 0;
+  width: 100%;
+}
+
+.saved-households label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.saved-household-btn {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: var(--green-light);
+  color: var(--green-dark);
+  border: 1.5px solid var(--green-mid);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.saved-household-btn:active {
+  background: var(--green-mid);
+  transform: scale(0.98);
+}
+
+.saved-household-btn .house-name {
+  font-weight: 600;
+}
+
+.saved-household-btn .house-code {
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.6);
+  padding: 2px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
