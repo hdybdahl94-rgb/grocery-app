@@ -339,6 +339,7 @@ export default function App() {
   const queueRef = useRef(
     initialHousehold ? loadQueuedMessages(initialHousehold.code) : []
   )
+  const hasConnectedRef = useRef(false)
 
   const showToast = useCallback((msg) => {
     setToast(msg)
@@ -372,7 +373,11 @@ export default function App() {
   useEffect(() => {
     if (!household) return
 
-    setConnected(null)
+
+    if (!hasConnectedRef.current) {
+      setConnected(null)
+    }
+
 
     let ws
     let reconnectTimeout
@@ -383,7 +388,8 @@ export default function App() {
       wsRef.current = ws
 
       ws.onopen = () => {
-        setConnected(true)
+        hasConnectedRef.current = true
+        set
         ws.send(JSON.stringify({
           action: 'JOIN',
           code: household.code,
@@ -458,8 +464,15 @@ export default function App() {
       }
 
       ws.onclose = () => {
-        setConnected(false)
         wsRef.current = null
+
+        // debounce disconnect (hindrer blink)
+        setTimeout(() => {
+          if (!wsRef.current) {
+            setConnected(false)
+          }
+        }, 1500)
+
         if (!closed && navigator.onLine) {
           reconnectTimeout = setTimeout(connect, 2000)
         }
