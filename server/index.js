@@ -132,7 +132,6 @@ function broadcastState(code) {
 
   persist(code);
 }
-``
 
 // Legg til en vare med sammenslåing: like navn (ikke ferdighandlet) slås sammen.
 // Knyttes til en rett (mealId) som en porsjon, eller "generelt" hvis ingen rett.

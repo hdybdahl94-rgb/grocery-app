@@ -382,7 +382,11 @@ export default function App() {
 
       ws.onopen = () => {
         setConnected(true)
-        ws.send(JSON.stringify({ action: 'JOIN', code: household.code }))
+        ws.send(JSON.stringify({
+          action: 'JOIN',
+          code: household.code,
+          name: household.name
+        }))
 
         const queued = [...queueRef.current]
         queued.forEach((m) => ws.send(JSON.stringify(m)))
@@ -472,7 +476,6 @@ export default function App() {
   }, [household, showToast])
 
   function handleJoin(name, code, initialState = {}) {
-    // ✅ label kommer enten fra backend eller UI
     const label = initialState.label || ''
 
     const hh = {
@@ -499,7 +502,7 @@ export default function App() {
     setState(next)
     saveCachedState(code, next)
 
-    // ✅ send label til backend hvis vi har en ny
+    // Hvis vi oppretter en ny label, legg den i kø til websocket er klar
     if (initialState.label) {
       const labelMsg = {
         action: 'SET_LABEL',
@@ -507,14 +510,8 @@ export default function App() {
         label
       }
 
-      const ws = wsRef.current
-
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(labelMsg))
-      } else {
-        queueRef.current = [...queueRef.current, labelMsg]
-        saveQueuedMessages(code, queueRef.current)
-      }
+      queueRef.current = [...queueRef.current, labelMsg]
+      saveQueuedMessages(code, queueRef.current)
     }
   }
 
