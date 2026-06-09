@@ -331,7 +331,7 @@ export default function App() {
   )
 
   const [tab, setTab] = useState('grocery')
-  const [connected, setConnected] = useState(false)
+  const [connected, setConnected] = useState(null)
   const [toast, setToast] = useState(null)
 
   const wsRef = useRef(null)
@@ -371,6 +371,8 @@ export default function App() {
 
   useEffect(() => {
     if (!household) return
+
+    setConnected(null)
 
     let ws
     let reconnectTimeout
@@ -559,18 +561,17 @@ export default function App() {
       {/* HEADER */}
       <header className="header">
         <h1>
-          <span
-            className="connection-dot"
-            style={{
-              background: connected ? '#69f0ae' : '#ffcc02',
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              display: 'inline-block',
-              marginRight: 8,
-            }}
-          />
           Hei, {household.name}! ({household.label || household.code})
+          {connected === true && (
+            <span
+              className="connection-icon"
+              title="Tilkoblet server"
+              aria-label="Tilkoblet server"
+              style={{ marginLeft: 8 }}
+            >
+              ✅
+            </span>
+          )}
         </h1>
 
         <div className="header-actions">
@@ -590,13 +591,6 @@ export default function App() {
           </button>
         </div>
       </header>
-
-      {/* TILKOBLINGSSTATUS */}
-      {!connected && (
-        <div className="sync-banner">
-          🔄 Viser lagret liste – kobler til server…
-        </div>
-      )}
 
       {/* MAIN CONTENT */}
       <main className="tab-content">
