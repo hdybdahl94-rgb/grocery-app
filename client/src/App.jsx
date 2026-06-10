@@ -396,6 +396,11 @@ export default function App() {
           name: household.name
         }))
 
+        ws.send(JSON.stringify({
+          action: 'GET_STATE'
+        }))
+
+
         const queued = [...queueRef.current]
         queued.forEach((m) => ws.send(JSON.stringify(m)))
       }
@@ -418,33 +423,12 @@ export default function App() {
               })
             }
 
-            setState((prev) => {
+            setState(() => {
+
               const next = {
-                groceries:
-                  data.groceries && data.groceries.length > 0
-                    ? data.groceries
-                    : prev.groceries,
-                meals:
-                  data.meals && data.meals.length > 0
-                    ? data.meals
-                    : prev.meals,
+                groceries: data.groceries || [],
+                meals: data.meals || [],
                 mealTemplates: data.mealTemplates || [],
-              }
-
-              const isServerEmpty =
-                (data.groceries?.length || 0) === 0 &&
-                (data.meals?.length || 0) === 0
-
-              if (!isServerEmpty) {
-                next.groceries = next.groceries.map((item) => ({
-                  ...item,
-                  pending: false,
-                }))
-
-                next.meals = next.meals.map((meal) => ({
-                  ...meal,
-                  pending: false,
-                }))
               }
 
               if (household?.code) {
