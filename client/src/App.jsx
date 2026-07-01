@@ -332,6 +332,7 @@ export default function App() {
 
   const [tab, setTab] = useState('grocery')
   const [connected, setConnected] = useState(null)
+  const [dbStatus, setDbStatus] = useState(null)
   const [toast, setToast] = useState(null)
 
   const wsRef = useRef(null)
@@ -387,9 +388,23 @@ export default function App() {
       ws = new WebSocket(WS_URL)
       wsRef.current = ws
 
-      ws.onopen = () => {
+      ws.onopen = async () => {
         hasConnectedRef.current = true
-        set
+        setConnected(true)
+
+        // Hent database status fra health endpoint
+        try {
+          const response = await fetch(
+            `${WS_URL.replace(/^ws/, 'http')}/api/health`
+          )
+          if (response.ok) {
+            const health = await response.json()
+            setDbStatus(health.database)
+          }
+        } catch (err) {
+          console.warn('Health check failed:', err.message)
+        }
+
         ws.send(JSON.stringify({
           action: 'JOIN',
           code: household.code,
@@ -517,6 +532,7 @@ export default function App() {
   function handleLeave() {
     setHousehold(null)
     setConnected(false)
+    setDbStatus(null)
   }
 
   function handleCopyCode() {
@@ -562,11 +578,20 @@ export default function App() {
           {connected === true && (
             <span
               className="connection-icon"
-              title="Tilkoblet server"
-              aria-label="Tilkoblet server"
+              title={
+                dbStatus === 'error' ? '❌ Databasefeil' :
+                dbStatus === 'in-memory' ? '💾 Lokal modus (data lagres ikke)' :
+                '✅ Tilkoblet server'
+              }
+              aria-label={
+                dbStatus === 'error' ? 'Databasefeil' :
+                dbStatus === 'in-memory' ? 'Lokal modus' :
+                'Tilkoblet server'
+              }
               style={{ marginLeft: 8 }}
             >
-              ✅
+              {dbStatus === 'error' ? '❌' :
+               dbStatus === 'in-memory' ? '💾' : '✅'}
             </span>
           )}
         </h1>

@@ -79,7 +79,10 @@ async function ensureHousehold(code) {
 
 // Lagre husstanden til databasen (write-through).
 function persist(code) {
-  if (!pool) return;
+  if (!pool) {
+    console.warn(`⚠️  In-memory mode – ikke lagrer husstand "${code}"`);
+    return;
+  }
   const hh = households[code];
   if (!hh) return;
   pool
@@ -88,7 +91,7 @@ function persist(code) {
        ON CONFLICT (code) DO UPDATE SET data = $2, updated_at = now()`,
       [code, hh]
     )
-    .catch(err => console.error('DB-lagring feilet:', err.message));
+    .catch(err => console.error(`DB-lagring feilet for ${code}:`, err.message));
 }
 
 async function codeExists(code) {
@@ -195,6 +198,26 @@ function syncTemplate(hh, mealId) {
 }
 
 // ===== REST =====
+app.get('/api/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    database: pool ? 'connected' : 'in-memory',
+    timestamp: new Date().toISOString()
+  };
+
+  // Try a simple query if pool exists
+  if (pool) {
+    try {
+      await pool.query('SELECT 1');
+      health.database = 'connected';
+    } catch (err) {
+      health.database = 'error';
+      health.error = err.message;
+    }
+  }
+  res.json(health);
+});
+
 app.get('/api/household/:code', async (req, res) => {
   const code = req.params.code.toUpperCase();
   const hh = await ensureHousehold(code);
